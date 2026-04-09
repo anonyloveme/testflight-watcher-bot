@@ -1,0 +1,121 @@
+"""Message template builders for Telegram bot responses."""
+
+from html import escape
+
+
+def welcome_message(first_name: str) -> str:
+	"""Build welcome message for a new or returning user."""
+	name = escape(first_name or "bạn")
+	return (
+		f"Xin chào {name}! 👋\n\n"
+		"🔍 <b>TestFlight Watcher Bot</b>\n\n"
+		"Bot giúp bạn theo dõi slot beta TestFlight theo thời gian thực.\n"
+		"Nhập App ID để theo dõi và nhận thông báo ngay khi slot mở.\n\n"
+		"Bắt đầu bằng cách chọn <b>➕ Theo dõi app</b> hoặc dùng lệnh /watch."
+	)
+
+
+def app_info_message(app_info: dict) -> str:
+	"""Build formatted app information message before watch confirm."""
+	app_name = escape(str(app_info.get("app_name", "Unknown App")))
+	app_id = escape(str(app_info.get("app_id", "")))
+	bundle_id = escape(str(app_info.get("bundle_id", "N/A")))
+	status = str(app_info.get("status", "UNKNOWN")).upper()
+
+	status_label = "⚫ UNKNOWN"
+	if status == "OPEN":
+		status_label = "🟢 OPEN"
+	elif status == "CLOSED":
+		status_label = "🔴 CLOSED"
+
+	return (
+		f"📱 <b>{app_name}</b>\n"
+		f"🆔 App ID: <code>{app_id}</code>\n"
+		f"📦 Bundle: {bundle_id}\n"
+		f"{status_label}\n\n"
+		"Bạn có muốn theo dõi app này không?"
+	)
+
+
+def watch_success_message(app_name: str, app_id: str) -> str:
+	"""Build success message after creating watch."""
+	return (
+		"✅ <b>Theo dõi thành công!</b>\n\n"
+		f"Bạn đang theo dõi: <b>{escape(app_name)}</b>\n"
+		f"App ID: <code>{escape(app_id)}</code>"
+	)
+
+
+def unwatch_success_message(app_name: str) -> str:
+	"""Build success message after removing watch."""
+	return f"🗑 Đã bỏ theo dõi <b>{escape(app_name)}</b> thành công."
+
+
+def slot_open_notification(app_name: str, app_id: str) -> str:
+	"""Build high-priority notification when slots open."""
+	join_url = f"https://testflight.apple.com/join/{escape(app_id)}"
+	return (
+		"🚨 <b>SLOT ĐÃ MỞ!</b> 🚨\n\n"
+		f"📱 <b>{escape(app_name)}</b> vừa mở đăng ký TestFlight!\n"
+		"⚡ Vào ngay trước khi hết slot:\n"
+		f"{join_url}"
+	)
+
+
+def slot_closed_notification(app_name: str, app_id: str) -> str:
+	"""Build notification when slots are closed."""
+	return (
+		"🔒 Slot TestFlight đã đóng.\n\n"
+		f"📱 <b>{escape(app_name)}</b>\n"
+		f"🆔 <code>{escape(app_id)}</code>"
+	)
+
+
+def my_list_message(watches: list) -> str:
+	"""Build message header for watch list section."""
+	if not watches:
+		return "Bạn chưa theo dõi app nào. Hãy chọn ➕ Theo dõi app để bắt đầu."
+	return f"📱 Danh sách <b>{len(watches)}</b> app đang theo dõi:"
+
+
+def stats_message(stats: dict) -> str:
+	"""Build formatted statistics summary message."""
+	top_apps = stats.get("top_apps", []) or []
+	top_lines: list[str] = []
+	for idx, app in enumerate(top_apps[:5], start=1):
+		top_lines.append(
+			f"{idx}. {escape(str(app.get('app_name') or 'Unknown App'))} "
+			f"(<code>{escape(str(app.get('app_id', '')))}</code>) - "
+			f"{int(app.get('watcher_count', 0))} watchers"
+		)
+
+	top_text = "\n".join(top_lines) if top_lines else "Chưa có dữ liệu."
+	return (
+		"📊 <b>Thống kê hệ thống</b>\n\n"
+		f"👥 Tổng users: <b>{int(stats.get('total_users', 0))}</b>\n"
+		f"📱 Tổng apps: <b>{int(stats.get('total_apps', 0))}</b>\n"
+		f"🔔 Tổng watches: <b>{int(stats.get('total_watches', 0))}</b>\n"
+		f"🟢 Apps OPEN: <b>{int(stats.get('open_apps', 0))}</b>\n\n"
+		"🏆 <b>Top app được theo dõi:</b>\n"
+		f"{top_text}"
+	)
+
+
+def error_invalid_app_id_message() -> str:
+	"""Build error message for invalid app id format."""
+	return "❌ App ID không hợp lệ. Vui lòng nhập đúng 8 ký tự chữ và số."
+
+
+def error_app_not_found_message(app_id: str) -> str:
+	"""Build error message when app id does not exist on TestFlight."""
+	return f"❌ Không tìm thấy app với App ID <code>{escape(app_id)}</code> trên TestFlight."
+
+
+def error_max_watches_message(max_count: int) -> str:
+	"""Build error message when user reaches watch limit."""
+	return f"⚠️ Bạn đã đạt giới hạn theo dõi tối đa: <b>{max_count}</b> app."
+
+
+def error_already_watching_message(app_name: str) -> str:
+	"""Build error message for duplicate watch attempts."""
+	return f"ℹ️ Bạn đã theo dõi <b>{escape(app_name)}</b> từ trước rồi."

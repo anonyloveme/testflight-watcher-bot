@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<section class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+        <div class="text-2xl mb-3">👥</div>
+        <div class="text-3xl font-bold text-white">{{ stats.total_users or 0 }}</div>
+        <div class="text-gray-400 text-sm mt-1">Total Users</div>
+    </div>
+    <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+        <div class="text-2xl mb-3">📱</div>
+        <div class="text-3xl font-bold text-white">{{ stats.total_apps or 0 }}</div>
+        <div class="text-gray-400 text-sm mt-1">Apps Tracked</div>
+    </div>
+    <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+        <div class="text-2xl mb-3">👀</div>
+        <div class="text-3xl font-bold text-white">{{ stats.total_watches or 0 }}</div>
+        <div class="text-gray-400 text-sm mt-1">Active Watches</div>
+    </div>
+    <div class="bg-gray-900 rounded-xl p-6 border border-gray-800">
+        <div class="text-2xl mb-3">🟢</div>
+        <div class="text-3xl font-bold text-white">{{ stats.open_apps or 0 }}</div>
+        <div class="text-gray-400 text-sm mt-1">Open Slots Now</div>
+    </div>
+</section>
+
+<section class="mb-8">
+    <h2 class="text-xl md:text-2xl font-bold mb-4">🟢 Đang có slot trống</h2>
+    {% if not open_apps %}
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-gray-400">
+            Hiện không có app nào đang open
+        </div>
+    {% else %}
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {% for app in open_apps %}
+                <article class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                    <h3 class="font-bold text-lg text-white mb-2">{{ app.app_name or "Unknown App" }}</h3>
+                    <p class="text-gray-400 text-sm mb-3">
+                        App ID:
+                        <code class="bg-gray-800 px-2 py-1 rounded text-xs">{{ app.app_id }}</code>
+                    </p>
+                    <a
+                        href="https://testflight.apple.com/join/{{ app.app_id }}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-500 text-white font-medium transition-colors"
+                    >
+                        Join Now →
+                    </a>
+                </article>
+            {% endfor %}
+        </div>
+    {% endif %}
+</section>
+
+<section>
+    <h2 class="text-xl md:text-2xl font-bold mb-4">🔥 Được theo dõi nhiều nhất</h2>
+    <div class="overflow-x-auto bg-gray-900 border border-gray-800 rounded-xl">
+        {% if not top_apps %}
+            <div class="p-6 text-gray-400">Chưa có dữ liệu theo dõi.</div>
+        {% else %}
+            <table class="w-full text-sm">
+                <thead class="bg-gray-900/80 border-b border-gray-800 text-gray-300">
+                    <tr>
+                        <th class="text-left px-4 py-3">Rank</th>
+                        <th class="text-left px-4 py-3">App Name</th>
+                        <th class="text-left px-4 py-3">App ID</th>
+                        <th class="text-left px-4 py-3">Status</th>
+                        <th class="text-left px-4 py-3">Watchers</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for app in top_apps %}
+                        <tr class="border-b border-gray-800 last:border-0">
+                            <td class="px-4 py-3 text-gray-400">#{{ loop.index }}</td>
+                            <td class="px-4 py-3 font-semibold">{{ app.app_name or "Unknown App" }}</td>
+                            <td class="px-4 py-3">
+                                <code class="bg-gray-800 px-2 py-1 rounded text-xs">{{ app.app_id }}</code>
+                            </td>
+                            <td class="px-4 py-3">
+                                {% set status = (app.current_status or "UNKNOWN") %}
+                                {% if status == "OPEN" %}
+                                    <span class="px-2 py-1 rounded-full text-xs bg-green-500/20 text-green-400">OPEN</span>
+                                {% elif status == "CLOSED" %}
+                                    <span class="px-2 py-1 rounded-full text-xs bg-red-500/20 text-red-400">CLOSED</span>
+                                {% else %}
+                                    <span class="px-2 py-1 rounded-full text-xs bg-gray-600/30 text-gray-300">UNKNOWN</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 font-medium">👀 {{ app.watcher_count or 0 }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+</section>
+
+<div id="refresh-box" class="fixed bottom-4 right-4 bg-gray-900 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg text-xs shadow-lg">
+    Tự động cập nhật sau <span id="refresh-seconds" class="font-semibold text-white">60</span>s
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function () {
+        let seconds = 60;
+        const el = document.getElementById('refresh-seconds');
+        const timer = setInterval(function () {
+            seconds -= 1;
+            if (el) {
+                el.textContent = String(seconds);
+            }
+            if (seconds <= 0) {
+                clearInterval(timer);
+                window.location.reload();
+            }
+        }, 1000);
+    })();
+</script>
+{% endblock %}

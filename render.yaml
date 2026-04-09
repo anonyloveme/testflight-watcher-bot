@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: testflight-watcher-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false
+      - key: BOT_USERNAME
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:///database.db
+      - key: POLL_INTERVAL
+        value: "300"
+      - key: MAX_WATCHES_PER_USER
+        value: "5"
+      - key: PORT
+        value: "5000"
+    healthCheckPath: /health

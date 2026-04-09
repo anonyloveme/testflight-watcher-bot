@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}All Apps{% endblock %}
+
+{% block content %}
+<header class="mb-6">
+    <h1 class="text-2xl md:text-3xl font-bold">📱 Tất cả Apps đang được theo dõi</h1>
+    <p class="text-gray-400 mt-2">Tổng số app: <span class="font-semibold text-white">{{ apps|length }}</span></p>
+</header>
+
+<section class="mb-6 bg-gray-900 border border-gray-800 rounded-xl p-4">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 items-center">
+        <div class="lg:col-span-2">
+            <input
+                id="searchInput"
+                type="text"
+                placeholder="Tìm theo tên app hoặc App ID..."
+                class="w-full bg-gray-950 border border-gray-700 rounded-lg px-4 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+            >
+        </div>
+        <div class="flex items-center gap-2 justify-start lg:justify-end">
+            <button class="filter-btn px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm" data-filter="ALL">Tất cả</button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 text-sm" data-filter="OPEN">🟢 Open</button>
+            <button class="filter-btn px-3 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 text-sm" data-filter="CLOSED">🔴 Closed</button>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div id="appsGrid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {% for app in apps %}
+            {% set status = (app.current_status or "UNKNOWN") %}
+            <article
+                class="app-card bg-gray-900 rounded-xl p-5 border border-gray-800 hover:border-gray-600 transition"
+                data-name="{{ (app.app_name or 'Unknown App')|lower }}"
+                data-app-id="{{ app.app_id|lower }}"
+                data-status="{{ status }}"
+            >
+                <div class="flex items-start justify-between gap-3 mb-3">
+                    <h3 class="font-bold text-lg text-white leading-tight">{{ app.app_name or "Unknown App" }}</h3>
+                    {% if status == "OPEN" %}
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold bg-green-500/20 text-green-400">OPEN</span>
+                    {% elif status == "CLOSED" %}
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold bg-red-500/20 text-red-400">CLOSED</span>
+                    {% else %}
+                        <span class="px-2 py-1 rounded-full text-xs font-semibold bg-gray-600/30 text-gray-300">UNKNOWN</span>
+                    {% endif %}
+                </div>
+
+                <p class="mb-3 text-gray-400 text-sm">
+                    <code class="text-xs bg-gray-800 px-2 py-1 rounded">{{ app.app_id }}</code>
+                </p>
+
+                <p class="text-sm text-gray-300 mb-2">👀 {{ app.watcher_count or 0 }} người theo dõi</p>
+
+                <p class="text-sm text-gray-400 mb-4">
+                    {% if app.last_checked %}
+                        Last checked:
+                        <span class="relative-time" data-last-checked="{{ app.last_checked.isoformat() }}">{{ app.last_checked.isoformat() }}</span>
+                    {% else %}
+                        Last checked: Chưa kiểm tra
+                    {% endif %}
+                </p>
+
+                <a
+                    href="https://testflight.apple.com/join/{{ app.app_id }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center justify-center w-full px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-100 text-sm font-medium"
+                >
+                    🔗 TestFlight Link
+                </a>
+            </article>
+        {% endfor %}
+    </div>
+
+    <div id="noResults" class="hidden mt-6 bg-gray-900 border border-gray-800 rounded-xl p-6 text-center text-gray-400">
+        Không tìm thấy app nào
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function () {
+        const searchInput = document.getElementById('searchInput');
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        const cards = document.querySelectorAll('.app-card');
+        const noResults = document.getElementById('noResults');
+
+        let activeFilter = 'ALL';
+
+        function formatRelativeTime(isoString) {
+            if (!isoString) {
+                return 'Chưa kiểm tra';
+            }
+            const date = new Date(isoString);
+            if (Number.isNaN(date.getTime())) {
+                return 'Chưa kiểm tra';
+            }
+            const diffMs = Date.now() - date.getTime();
+            const diffSec = Math.max(1, Math.floor(diffMs / 1000));
+            if (diffSec < 60) return diffSec + ' giây trước';
+            const diffMin = Math.floor(diffSec / 60);
+            if (diffMin < 60) return diffMin + ' phút trước';
+            const diffHour = Math.floor(diffMin / 60);
+            if (diffHour < 24) return diffHour + ' giờ trước';
+            const diffDay = Math.floor(diffHour / 24);
+            return diffDay + ' ngày trước';
+        }
+
+        function applyFilters() {
+            const keyword = (searchInput ? searchInput.value : '').trim().toLowerCase();
+            let visible = 0;
+
+            cards.forEach(function (card) {
+                const name = card.dataset.name || '';
+                const appId = card.dataset.appId || '';
+                const status = card.dataset.status || 'UNKNOWN';
+
+                const matchesSearch = !keyword || name.includes(keyword) || appId.includes(keyword);
+                const matchesStatus = activeFilter === 'ALL' || status === activeFilter;
+                const show = matchesSearch && matchesStatus;
+
+                card.style.display = show ? '' : 'none';
+                if (show) {
+                    visible += 1;
+                }
+            });
+
+            if (noResults) {
+                noResults.classList.toggle('hidden', visible > 0);
+            }
+        }
+
+        document.querySelectorAll('.relative-time').forEach(function (el) {
+            el.textContent = formatRelativeTime(el.dataset.lastChecked || '');
+        });
+
+        if (searchInput) {
+            searchInput.addEventListener('input', applyFilters);
+        }
+
+        filterButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                activeFilter = btn.dataset.filter || 'ALL';
+                filterButtons.forEach(function (b) {
+                    b.classList.remove('ring-2', 'ring-green-500');
+                });
+                btn.classList.add('ring-2', 'ring-green-500');
+                applyFilters();
+            });
+        });
+
+        applyFilters();
+    })();
+</script>
+{% endblock %}
