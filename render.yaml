@@ -2,8 +2,9 @@ services:
   - type: web
     name: testflight-watcher-bot
     runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    pythonVersion: "3.11.6"
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
     envVars:
       - key: TELEGRAM_TOKEN
         sync: false
@@ -19,6 +20,4 @@ services:
         value: "5"
       - key: PORT
         value: "5000"
-      - key: PYTHON_VERSION
-        value: "3.11.6"
     healthCheckPath: /health
