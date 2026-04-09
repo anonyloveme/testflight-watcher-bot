@@ -1,6 +1,7 @@
 """Telegram bot handlers for commands, callbacks, and watch flow."""
 
 import asyncio
+from html import escape
 import os
 import re
 
@@ -17,6 +18,7 @@ from telegram.ext import (
 
 from bot.keyboards import *
 from bot.messages import *
+from bot.messages import recheck_message
 from core.departures import find_app_on_departures, get_open_apps_cached
 from core.testflight import fetch_app_info, validate_app_id
 from database import get_db
@@ -409,6 +411,50 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "bundle_id": app.bundle_id or "N/A",
                     }
                 ),
+                parse_mode="HTML",
+                reply_markup=app_detail_keyboard(app_id),
+            )
+            return
+
+        if data.startswith("recheck:"):
+            app_id = data.split(":", 1)[1]
+            db_gen, db = _with_db_session()
+            try:
+                app = get_app_by_app_id(db, app_id)
+            finally:
+                db_gen.close()
+
+            if not app:
+                await query.edit_message_text(
+                    error_app_not_found_message(app_id),
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
+                return
+
+            app_name = app.app_name or app_id
+            current_status = app.current_status
+
+            await query.edit_message_text(
+                f"⏳ Đang kiểm tra slot cho <b>{escape(app_name)}</b>...",
+                parse_mode="HTML",
+            )
+
+            try:
+                fresh_info = await asyncio.to_thread(fetch_app_info, app_id)
+                new_status = fresh_info["status"]
+            except Exception:
+                new_status = "UNKNOWN"
+
+            if new_status != "UNKNOWN" and new_status != current_status:
+                db_gen, db = _with_db_session()
+                try:
+                    update_app_status(db, app_id, new_status)
+                finally:
+                    db_gen.close()
+
+            await query.edit_message_text(
+                recheck_message(app_name, app_id, new_status),
                 parse_mode="HTML",
                 reply_markup=app_detail_keyboard(app_id),
             )

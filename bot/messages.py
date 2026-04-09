@@ -18,20 +18,19 @@ def welcome_message(first_name: str) -> str:
 def app_info_message(app_info: dict) -> str:
 	"""Build formatted app information message before watch confirm."""
 	app_name = escape(str(app_info.get("app_name", "Unknown App")))
-	app_id = escape(str(app_info.get("app_id", "")))
-	bundle_id = escape(str(app_info.get("bundle_id", "N/A")))
+	app_id_raw = str(app_info.get("app_id", ""))
+	app_id = escape(app_id_raw)
 	status = str(app_info.get("status", "UNKNOWN")).upper()
-
-	status_label = "⚫ UNKNOWN"
-	if status == "OPEN":
-		status_label = "🟢 OPEN"
-	elif status == "CLOSED":
-		status_label = "🔴 CLOSED"
+	status_label = {
+		"OPEN": "🟢 OPEN — Còn slot!",
+		"CLOSED": "🔴 CLOSED — Hết slot",
+	}.get(status, "⚫ UNKNOWN")
+	join_url = f"https://testflight.apple.com/join/{escape(app_id_raw)}"
 
 	return (
 		f"📱 <b>{app_name}</b>\n"
 		f"🆔 App ID: <code>{app_id}</code>\n"
-		f"📦 Bundle: {bundle_id}\n"
+		f"🔗 <a href='{join_url}'>Xem trên TestFlight</a>\n"
 		f"{status_label}\n\n"
 		"Bạn có muốn theo dõi app này không?"
 	)
@@ -87,9 +86,9 @@ def slot_open_notification(app_name: str, app_id: str) -> str:
 	join_url = f"https://testflight.apple.com/join/{escape(app_id)}"
 	return (
 		"🚨 <b>SLOT ĐÃ MỞ!</b> 🚨\n\n"
-		f"📱 <b>{escape(app_name)}</b> vừa mở đăng ký TestFlight!\n"
-		"⚡ Vào ngay trước khi hết slot:\n"
-		f"{join_url}"
+		f"📱 <b>{escape(app_name)}</b> vừa mở đăng ký TestFlight!\n\n"
+		f"⚡ <a href='{join_url}'>Nhấn vào đây để tham gia ngay!</a>\n\n"
+		"⏰ Slot có thể đóng bất cứ lúc nào!"
 	)
 
 
@@ -155,7 +154,24 @@ def error_already_watching_message(app_name: str) -> str:
 def discover_message(count: int) -> str:
 	"""Build message for discovered open TestFlight apps."""
 	return (
-		"🔍 <b>Khám phá TestFlight</b>\n\n"
+		"🌐 <b>Khám phá qua departures.to</b>\n\n"
 		f"Tìm thấy <b>{count}</b> app đang mở slot!\n"
+		"📌 Nguồn: <a href='https://departures.to'>departures.to</a>\n\n"
 		"Nhấn vào app để theo dõi ngay 👇"
+	)
+
+
+def recheck_message(app_name: str, app_id: str, status: str) -> str:
+	"""Build message for manual slot recheck result."""
+	status = status.upper()
+	status_label = {
+		"OPEN": "🟢 OPEN — Còn slot! Vào ngay!",
+		"CLOSED": "🔴 CLOSED — Chưa có slot",
+	}.get(status, "⚫ UNKNOWN — Không lấy được trạng thái")
+	return (
+		"🔄 <b>Kết quả kiểm tra</b>\n\n"
+		f"📱 <b>{escape(app_name)}</b>\n"
+		f"🆔 <code>{escape(app_id)}</code>\n"
+		f"{status_label}\n\n"
+		"🕐 Vừa kiểm tra xong"
 	)

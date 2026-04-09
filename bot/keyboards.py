@@ -7,12 +7,12 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     """Return the main menu keyboard."""
     keyboard = [
         [
-            InlineKeyboardButton("📋 App phổ biến", callback_data="popular"),
             InlineKeyboardButton("➕ Theo dõi app", callback_data="watch"),
+            InlineKeyboardButton("📱 App đang theo dõi", callback_data="mylist"),
         ],
         [
-            InlineKeyboardButton("🔍 Khám phá OPEN", callback_data="discover"),
-            InlineKeyboardButton("📱 App đang theo dõi", callback_data="mylist"),
+            InlineKeyboardButton("🌐 Khám phá departures.to", callback_data="discover"),
+            InlineKeyboardButton("📋 App phổ biến", callback_data="popular"),
         ],
         [InlineKeyboardButton("📊 Thống kê", callback_data="stats")],
     ]
@@ -27,7 +27,13 @@ def confirm_watch_keyboard(app_id: str) -> InlineKeyboardMarkup:
                 "✅ Xác nhận theo dõi", callback_data=f"confirm_watch:{app_id}"
             ),
             InlineKeyboardButton("❌ Huỷ", callback_data="cancel"),
-        ]
+        ],
+        [
+            InlineKeyboardButton(
+                "🔗 Mở TestFlight xem thử",
+                url=f"https://testflight.apple.com/join/{app_id}",
+            ),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -64,10 +70,20 @@ def app_detail_keyboard(app_id: str) -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton(
-                "🗑 Bỏ theo dõi app này", callback_data=f"unwatch:{app_id}"
-            )
+                "🔄 Kiểm tra slot ngay", callback_data=f"recheck:{app_id}"
+            ),
         ],
-        [InlineKeyboardButton("🔙 Quay lại danh sách", callback_data="back_mylist")],
+        [
+            InlineKeyboardButton(
+                "🔗 Mở TestFlight", url=f"https://testflight.apple.com/join/{app_id}"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "🗑 Bỏ theo dõi", callback_data=f"unwatch:{app_id}"
+            ),
+            InlineKeyboardButton("🔙 Danh sách", callback_data="back_mylist"),
+        ],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -77,20 +93,21 @@ def popular_apps_keyboard(popular_apps: list) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     for app in popular_apps:
         status = str(app.get("status", "UNKNOWN")).upper()
-        icon = "⚫"
-        if status == "OPEN":
-            icon = "🟢"
-        elif status == "CLOSED":
-            icon = "🔴"
+        icon = "⚫" if status == "UNKNOWN" else ("🟢" if status == "OPEN" else "🔴")
 
         app_name = app.get("name") or app.get("app_name") or "Unknown App"
+        app_id = app.get("app_id", "")
 
         rows.append(
             [
                 InlineKeyboardButton(
                     f"{icon} {app_name}",
-                    callback_data=f"quick_watch:{app.get('app_id', '')}",
-                )
+                    callback_data=f"quick_watch:{app_id}",
+                ),
+                InlineKeyboardButton(
+                    "🔗",
+                    url=f"https://testflight.apple.com/join/{app_id}",
+                ),
             ]
         )
 
