@@ -26,6 +26,13 @@ from database.crud import *
 
 WAITING_APP_ID = 1
 
+WATCH_PROMPT = (
+    "🔗 <b>Gửi link TestFlight để theo dõi!</b>\n\n"
+    "Ví dụ:\n"
+    "<code>https://testflight.apple.com/join/m2kxP5cw</code>\n\n"
+    "💡 Copy link từ App Store hoặc trang web của app rồi paste vào đây."
+)
+
 
 def _with_db_session():
     """Create a DB session generator and concrete session object."""
@@ -139,7 +146,7 @@ async def watch_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if query:
             await query.answer()
             await query.edit_message_text(
-                "Nhập App ID (8 ký tự chữ và số) để theo dõi:",
+                WATCH_PROMPT,
                 parse_mode="HTML",
                 reply_markup=cancel_keyboard(),
             )
@@ -150,7 +157,7 @@ async def watch_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
         await message.reply_text(
-            "Nhập App ID (8 ký tự chữ và số) để theo dõi:",
+            WATCH_PROMPT,
             parse_mode="HTML",
             reply_markup=cancel_keyboard(),
         )
@@ -188,10 +195,10 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
 
         if not app_id:
             await message.reply_text(
-                "❌ Không nhận ra định dạng này.\n\n"
-                "Vui lòng gửi:\n"
-                "• App ID: <code>ABCDEFGH</code>\n"
-                "• Hoặc link: <code>https://testflight.apple.com/join/ABCDEFGH</code>",
+                "❌ <b>Không nhận ra link này!</b>\n\n"
+                "Vui lòng gửi đúng link TestFlight, ví dụ:\n"
+                "<code>https://testflight.apple.com/join/m2kxP5cw</code>\n\n"
+                "💡 Link TestFlight luôn có dạng <b>testflight.apple.com/join/...</b>",
                 parse_mode="HTML",
                 reply_markup=cancel_keyboard(),
             )

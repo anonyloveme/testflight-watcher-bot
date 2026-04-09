@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, Forbidden, TelegramError
 
 from bot.messages import slot_closed_notification, slot_open_notification
@@ -12,10 +12,35 @@ from bot.messages import slot_closed_notification, slot_open_notification
 logger = logging.getLogger(__name__)
 
 
-async def send_message_to_user(bot: Bot, chat_id: int, text: str) -> bool:
+def _open_slot_keyboard(app_id: str) -> InlineKeyboardMarkup:
+    """Inline keyboard with one-tap TestFlight open button."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🚀 Mở TestFlight ngay!",
+                    url=f"https://testflight.apple.com/join/{app_id}",
+                )
+            ]
+        ]
+    )
+
+
+async def send_message_to_user(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    reply_markup=None,
+) -> bool:
     """Send a message to one user and return whether it succeeds."""
     try:
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=reply_markup,
+            disable_web_page_preview=True,
+        )
         return True
     except Forbidden:
         logger.warning("Cannot send to %s: user blocked bot", chat_id)
@@ -32,13 +57,19 @@ async def send_message_to_user(bot: Bot, chat_id: int, text: str) -> bool:
 
 
 async def notify_slot_opened(bot: Bot, watchers: list, app_name: str, app_id: str) -> dict:
-    """Notify all watchers that an app slot is OPEN."""
+    """Notify all watchers that an app slot is OPEN with one-tap join button."""
     payload = slot_open_notification(app_name, app_id)
+    keyboard = _open_slot_keyboard(app_id)
     sent = 0
     failed = 0
 
     for watcher in watchers:
-        ok = await send_message_to_user(bot, int(watcher.chat_id), payload)
+        ok = await send_message_to_user(
+            bot,
+            int(watcher.chat_id),
+            payload,
+            reply_markup=keyboard,
+        )
         if ok:
             sent += 1
         else:

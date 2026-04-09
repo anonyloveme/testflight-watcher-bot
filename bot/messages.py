@@ -1,5 +1,6 @@
 """Message template builders for Telegram bot responses."""
 
+import os
 from html import escape
 
 
@@ -69,10 +70,14 @@ def app_info_message_rich(app_info: dict) -> str:
 
 def watch_success_message(app_name: str, app_id: str) -> str:
 	"""Build success message after creating watch."""
+	join_url = f"https://testflight.apple.com/join/{escape(app_id)}"
 	return (
 		"✅ <b>Theo dõi thành công!</b>\n\n"
-		f"Bạn đang theo dõi: <b>{escape(app_name)}</b>\n"
-		f"App ID: <code>{escape(app_id)}</code>"
+		f"📱 <b>{escape(app_name)}</b>\n"
+		f"🆔 App ID: <code>{escape(app_id)}</code>\n"
+		f"🔗 <a href='{join_url}'>Mở TestFlight</a>\n\n"
+		"🔔 Bot sẽ thông báo ngay khi slot mở!\n"
+		f"⏱ Kiểm tra mỗi {os.getenv('POLL_INTERVAL', '300')} giây một lần."
 	)
 
 
@@ -83,12 +88,12 @@ def unwatch_success_message(app_name: str) -> str:
 
 def slot_open_notification(app_name: str, app_id: str) -> str:
 	"""Build high-priority notification when slots open."""
-	join_url = f"https://testflight.apple.com/join/{escape(app_id)}"
 	return (
 		"🚨 <b>SLOT ĐÃ MỞ!</b> 🚨\n\n"
-		f"📱 <b>{escape(app_name)}</b> vừa mở đăng ký TestFlight!\n\n"
-		f"⚡ <a href='{join_url}'>Nhấn vào đây để tham gia ngay!</a>\n\n"
-		"⏰ Slot có thể đóng bất cứ lúc nào!"
+		f"📱 <b>{escape(app_name)}</b>\n"
+		f"🆔 <code>{escape(app_id)}</code>\n\n"
+		"⚡ Nhấn nút bên dưới để vào ngay!\n"
+		"⏰ <i>Slot có thể đóng bất cứ lúc nào!</i>"
 	)
 
 

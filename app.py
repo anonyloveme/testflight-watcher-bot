@@ -6,6 +6,7 @@ import logging
 import threading
 
 from dotenv import load_dotenv
+from telegram import Bot
 from telegram.ext import Application
 
 load_dotenv()
@@ -28,6 +29,11 @@ async def run_bot():
     token = os.environ.get("TELEGRAM_TOKEN", "").strip()
     if not token:
         raise ValueError("TELEGRAM_TOKEN is missing. Please set TELEGRAM_TOKEN in .env")
+
+    # Clean old webhook before polling to avoid getUpdates conflict on restart.
+    async with Bot(token=token) as bot:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ Đã xóa webhook cũ, sẵn sàng polling...")
 
     application = Application.builder().token(token).build()
     setup_handlers(application)
