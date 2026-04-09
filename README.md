@@ -12,7 +12,7 @@ Nhận thông báo ngay khi có slot trống!
 - Thống kê app được theo dõi nhiều nhất
 
 ## 🤖 Sử dụng Bot
-Link: https://t.me/{BOT_USERNAME}
+Link: https://t.me/testflightchecker888bot
 
 Các lệnh:
 - /start - Khởi động bot
@@ -26,7 +26,7 @@ Các lệnh:
 
 ### Chạy local
 # Clone repo
-git clone https://github.com/username/testflight-watcher-bot
+git clone https://github.com/anonyloveme/testflight-watcher-bot
 cd testflight-watcher-bot
 
 # Tạo môi trường ảo
