@@ -37,6 +37,37 @@ def app_info_message(app_info: dict) -> str:
 	)
 
 
+def app_info_message_rich(app_info: dict) -> str:
+	"""Build a richer app information message for departures.to results."""
+	if str(app_info.get("source", "")).lower() == "testflight":
+		return app_info_message(app_info)
+
+	app_name = escape(str(app_info.get("app_name", "Unknown App")))
+	app_id = escape(str(app_info.get("app_id", "")))
+	categories = app_info.get("categories", []) or []
+	description = str(app_info.get("description", "")).strip()
+	if len(description) > 150:
+		description = description[:150].rstrip() + "..."
+	description = escape(description) if description else "Chưa có mô tả."
+	status = str(app_info.get("status", "UNKNOWN")).upper()
+	status_emoji = "⚫"
+	if status == "OPEN":
+		status_emoji = "🟢"
+	elif status == "CLOSED":
+		status_emoji = "🔴"
+	categories_text = ", ".join(escape(str(category)) for category in categories) if categories else "N/A"
+
+	return (
+		f"📱 <b>{app_name}</b>\n"
+		f"🆔 App ID: <code>{app_id}</code>\n"
+		f"🏷 Category: {categories_text}\n"
+		f"📝 {description}\n"
+		f"{status_emoji} Trạng thái: {status}\n"
+		"🔗 Source: departures.to\n\n"
+		"Bạn có muốn theo dõi app này không?"
+	)
+
+
 def watch_success_message(app_name: str, app_id: str) -> str:
 	"""Build success message after creating watch."""
 	return (
@@ -119,3 +150,12 @@ def error_max_watches_message(max_count: int) -> str:
 def error_already_watching_message(app_name: str) -> str:
 	"""Build error message for duplicate watch attempts."""
 	return f"ℹ️ Bạn đã theo dõi <b>{escape(app_name)}</b> từ trước rồi."
+
+
+def discover_message(count: int) -> str:
+	"""Build message for discovered open TestFlight apps."""
+	return (
+		"🔍 <b>Khám phá TestFlight</b>\n\n"
+		f"Tìm thấy <b>{count}</b> app đang mở slot!\n"
+		"Nhấn vào app để theo dõi ngay 👇"
+	)

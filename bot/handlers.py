@@ -16,6 +16,7 @@ from telegram.ext import (
 
 from bot.keyboards import *
 from bot.messages import *
+from core.departures import find_app_on_departures, get_open_apps_cached
 from core.testflight import fetch_app_info, validate_app_id
 from database import get_db
 from database.crud import *
@@ -78,6 +79,54 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as exc:
         print(f"[help_handler] Error: {exc}")
+
+
+async def discover_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Discover apps that are currently open on TestFlight."""
+    try:
+        query = update.callback_query
+        message = update.effective_message
+
+        if query:
+            await query.answer()
+            await query.edit_message_text("🔍 Đang tìm app đang mở slot...", parse_mode="HTML")
+        elif message:
+            await message.reply_text("🔍 Đang tìm app đang mở slot...", parse_mode="HTML")
+
+        open_apps = get_open_apps_cached()
+        if not open_apps:
+            no_results_text = "Hiện không tìm thấy app nào đang mở slot"
+            if query:
+                await query.edit_message_text(
+                    no_results_text,
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
+            elif message:
+                await message.reply_text(
+                    no_results_text,
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
+            return
+
+        display_apps = [
+            {
+                "name": app.get("app_name") or app.get("name") or "Unknown App",
+                "app_id": app.get("app_id", ""),
+                "status": app.get("status", "OPEN"),
+            }
+            for app in open_apps[:10]
+        ]
+
+        text = discover_message(len(open_apps))
+        keyboard = popular_apps_keyboard(display_apps)
+        if query:
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=keyboard)
+        elif message:
+            await message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+    except Exception as exc:
+        print(f"[discover_handler] Error: {exc}")
 
 
 async def watch_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,6 +194,14 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return WAITING_APP_ID
 
+        if not validate_app_id(app_id):
+            await message.reply_text(
+                error_invalid_app_id_message(),
+                parse_mode="HTML",
+                reply_markup=cancel_keyboard(),
+            )
+            return WAITING_APP_ID
+
         max_watches = int(os.getenv("MAX_WATCHES_PER_USER", "5"))
         db_gen, db = _with_db_session()
         try:
@@ -161,7 +218,20 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
         try:
-            app_info = fetch_app_info(app_id)
+            departures_info = find_app_on_departures(app_id)
+            if departures_info:
+                app_info = {
+                    "app_id": app_id,
+                    "app_name": departures_info["app_name"],
+                    "bundle_id": "",
+                    "status": departures_info["status"],
+                    "description": departures_info.get("description", ""),
+                    "categories": departures_info.get("categories", []),
+                    "source": "departures.to",
+                }
+            else:
+                app_info = fetch_app_info(app_id)
+                app_info["source"] = "testflight"
         except ValueError:
             await message.reply_text(
                 error_app_not_found_message(app_id),
@@ -178,11 +248,18 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
         context.user_data["pending_app"] = app_info
-        await message.reply_text(
-            app_info_message(app_info),
-            parse_mode="HTML",
-            reply_markup=confirm_watch_keyboard(app_id),
-        )
+        if app_info.get("source") == "departures.to":
+            await message.reply_text(
+                app_info_message_rich(app_info),
+                parse_mode="HTML",
+                reply_markup=confirm_watch_keyboard(app_id),
+            )
+        else:
+            await message.reply_text(
+                app_info_message(app_info),
+                parse_mode="HTML",
+                reply_markup=confirm_watch_keyboard(app_id),
+            )
         return ConversationHandler.END
     except Exception as exc:
         print(f"[watch_receive_app_id] Error: {exc}")
@@ -233,6 +310,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if data == "watch":
             await watch_start(update, context)
+            return
+
+        if data == "discover":
+            await discover_handler(update, context)
             return
 
         if data == "stats":
@@ -511,5 +592,6 @@ def setup_handlers(app: Application):
 
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("discover", discover_handler))
     app.add_handler(watch_conversation)
     app.add_handler(CallbackQueryHandler(callback_handler))

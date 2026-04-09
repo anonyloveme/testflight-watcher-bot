@@ -7,11 +7,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot
 
+from core.departures import get_popular_apps_from_departures
 from core.notifier import notify_admin, notify_slot_closed, notify_slot_opened
 from core.testflight import check_app_status
 from database import get_db
 from database.crud import (
     get_all_apps,
+    get_or_create_app,
     get_user_watches,
     get_watchers_of_app,
     remove_watch,
@@ -110,6 +112,33 @@ async def check_all_apps(bot: Bot):
         db_gen.close()
 
 
+async def sync_popular_apps(bot: Bot):
+    """Sync popular apps from departures.to into the local database."""
+    db_gen, db = _with_db_session()
+    try:
+        popular_apps = get_popular_apps_from_departures(limit=20)
+        count = 0
+        for app in popular_apps:
+            try:
+                get_or_create_app(
+                    db,
+                    app_id=app.get("app_id", ""),
+                    app_name=app.get("app_name", ""),
+                    bundle_id="",
+                    status=app.get("status", "UNKNOWN"),
+                )
+                count += 1
+                logger.info("Synced popular app: %s", app.get("app_name", app.get("app_id", "unknown")))
+            except Exception as exc:
+                logger.warning("Failed to sync popular app %s: %s", app.get("app_id"), exc)
+
+        logger.info("Synced %s popular apps from departures.to", count)
+    except Exception as exc:
+        logger.warning("Popular apps sync failed: %s", exc)
+    finally:
+        db_gen.close()
+
+
 def create_scheduler(bot: Bot) -> AsyncIOScheduler:
     """Create and configure periodic scheduler without starting it."""
     poll_interval = int(os.environ.get("POLL_INTERVAL", "300"))
@@ -119,6 +148,14 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
         trigger=IntervalTrigger(seconds=poll_interval),
         args=[bot],
         id="check_all_apps",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        sync_popular_apps,
+        trigger=IntervalTrigger(hours=6),
+        args=[bot],
+        id="sync_popular_apps",
         max_instances=1,
         coalesce=True,
     )

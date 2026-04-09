@@ -11,9 +11,10 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕ Theo dõi app", callback_data="watch"),
         ],
         [
-            InlineKeyboardButton("📊 Thống kê", callback_data="stats"),
+            InlineKeyboardButton("🔍 Khám phá OPEN", callback_data="discover"),
             InlineKeyboardButton("📱 App đang theo dõi", callback_data="mylist"),
         ],
+        [InlineKeyboardButton("📊 Thống kê", callback_data="stats")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -82,10 +83,12 @@ def popular_apps_keyboard(popular_apps: list) -> InlineKeyboardMarkup:
         elif status == "CLOSED":
             icon = "🔴"
 
+        app_name = app.get("name") or app.get("app_name") or "Unknown App"
+
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{icon} {app.get('name', 'Unknown App')}",
+                    f"{icon} {app_name}",
                     callback_data=f"quick_watch:{app.get('app_id', '')}",
                 )
             ]
