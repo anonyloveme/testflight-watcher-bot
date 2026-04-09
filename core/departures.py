@@ -4,7 +4,6 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta
-from functools import lru_cache
 from typing import Optional
 from urllib.parse import urljoin
 
@@ -29,7 +28,7 @@ def _fetch_url(url: str) -> Optional[str]:
     """Fetch HTML from a URL with retries."""
     for attempt in range(3):
         try:
-            response = requests.get(url, headers=HEADERS, timeout=10)
+            response = requests.get(url, headers=HEADERS, timeout=8)
             if response.status_code != 200:
                 raise requests.RequestException(f"Unexpected status code {response.status_code}")
             return response.text
@@ -189,9 +188,21 @@ def find_app_on_departures(app_id: str) -> dict | None:
         return cached["data"]
 
     try:
-        for departures_id in _collect_departures_ids(max_pages=3):
+        search_url = f"{BASE_URL}/search?q={cache_key}"
+        html = _fetch_url(search_url)
+        if not html:
+            _search_cache[cache_key] = {"data": None, "expires_at": now + timedelta(minutes=30)}
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        for anchor in soup.find_all("a", href=True):
+            href = anchor["href"]
+            match = re.search(r"/apps/(\d+)", href)
+            if not match:
+                continue
+
+            departures_id = int(match.group(1))
             app = scrape_app_detail(departures_id)
-            time.sleep(1)
             if app and app.get("app_id", "").upper() == cache_key:
                 _search_cache[cache_key] = {"data": app, "expires_at": now + timedelta(minutes=30)}
                 return app

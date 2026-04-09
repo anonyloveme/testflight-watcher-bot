@@ -1,5 +1,6 @@
 """Telegram bot handlers for commands, callbacks, and watch flow."""
 
+import asyncio
 import os
 import re
 
@@ -93,7 +94,7 @@ async def discover_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif message:
             await message.reply_text("🔍 Đang tìm app đang mở slot...", parse_mode="HTML")
 
-        open_apps = get_open_apps_cached()
+        open_apps = await asyncio.to_thread(get_open_apps_cached)
         if not open_apps:
             no_results_text = "Hiện không tìm thấy app nào đang mở slot"
             if query:
@@ -218,20 +219,8 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
         try:
-            departures_info = find_app_on_departures(app_id)
-            if departures_info:
-                app_info = {
-                    "app_id": app_id,
-                    "app_name": departures_info["app_name"],
-                    "bundle_id": "",
-                    "status": departures_info["status"],
-                    "description": departures_info.get("description", ""),
-                    "categories": departures_info.get("categories", []),
-                    "source": "departures.to",
-                }
-            else:
-                app_info = fetch_app_info(app_id)
-                app_info["source"] = "testflight"
+            app_info = fetch_app_info(app_id)
+            app_info["source"] = "testflight"
         except ValueError:
             await message.reply_text(
                 error_app_not_found_message(app_id),
@@ -247,19 +236,29 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             return ConversationHandler.END
 
+        async def _enrich_later():
+            try:
+                dep_info = await asyncio.to_thread(find_app_on_departures, app_id)
+                if dep_info:
+                    app_info.update(
+                        {
+                            "app_name": dep_info.get("app_name") or app_info.get("app_name"),
+                            "categories": dep_info.get("categories", []),
+                            "description": dep_info.get("description", ""),
+                            "source": "departures.to",
+                        }
+                    )
+            except Exception:
+                pass
+
+        asyncio.create_task(_enrich_later())
+
         context.user_data["pending_app"] = app_info
-        if app_info.get("source") == "departures.to":
-            await message.reply_text(
-                app_info_message_rich(app_info),
-                parse_mode="HTML",
-                reply_markup=confirm_watch_keyboard(app_id),
-            )
-        else:
-            await message.reply_text(
-                app_info_message(app_info),
-                parse_mode="HTML",
-                reply_markup=confirm_watch_keyboard(app_id),
-            )
+        await message.reply_text(
+            app_info_message(app_info),
+            parse_mode="HTML",
+            reply_markup=confirm_watch_keyboard(app_id),
+        )
         return ConversationHandler.END
     except Exception as exc:
         print(f"[watch_receive_app_id] Error: {exc}")
