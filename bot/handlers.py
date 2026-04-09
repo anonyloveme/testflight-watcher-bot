@@ -1,6 +1,7 @@
 """Telegram bot handlers for commands, callbacks, and watch flow."""
 
 import os
+import re
 
 from telegram import Update
 from telegram.ext import (
@@ -115,10 +116,30 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
         if not message or not user or not message.text:
             return ConversationHandler.END
 
-        app_id = message.text.strip().upper()
-        if not validate_app_id(app_id):
+        user_input = message.text.strip()
+
+        # Tự động parse nếu user gửi link đầy đủ
+        # Hỗ trợ các dạng:
+        # https://testflight.apple.com/join/ABCDEFGH
+        # testflight.apple.com/join/ABCDEFGH
+        # ABCDEFGH (App ID trực tiếp)
+        patterns = [
+            r"testflight\.apple\.com/join/([A-Za-z0-9]{8})",  # link dạng URL
+            r"^([A-Za-z0-9]{8})$",  # App ID trực tiếp
+        ]
+        app_id = None
+        for pattern in patterns:
+            match = re.search(pattern, user_input, re.IGNORECASE)
+            if match:
+                app_id = match.group(1).upper()
+                break
+
+        if not app_id:
             await message.reply_text(
-                error_invalid_app_id_message(),
+                "❌ Không nhận ra định dạng này.\n\n"
+                "Vui lòng gửi:\n"
+                "• App ID: <code>ABCDEFGH</code>\n"
+                "• Hoặc link: <code>https://testflight.apple.com/join/ABCDEFGH</code>",
                 parse_mode="HTML",
                 reply_markup=cancel_keyboard(),
             )
