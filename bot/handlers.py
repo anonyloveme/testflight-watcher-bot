@@ -181,7 +181,7 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
         for pattern in patterns:
             match = re.search(pattern, user_input, re.IGNORECASE)
             if match:
-                app_id = match.group(1).upper()
+                app_id = match.group(1)
                 break
 
         if not app_id:

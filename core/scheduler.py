@@ -3,6 +3,8 @@
 import logging
 import os
 
+import requests
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot
@@ -139,6 +141,17 @@ async def sync_popular_apps(bot: Bot):
         db_gen.close()
 
 
+def self_ping():
+    """Ping own /health endpoint to prevent Render free tier sleep."""
+    try:
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+        if render_url:
+            requests.get(f"{render_url}/health", timeout=10)
+            logger.info("Self-ping OK")
+    except Exception as exc:
+        logger.warning("Self-ping failed: %s", exc)
+
+
 def create_scheduler(bot: Bot) -> AsyncIOScheduler:
     """Create and configure periodic scheduler without starting it."""
     poll_interval = int(os.environ.get("POLL_INTERVAL", "300"))
@@ -148,6 +161,14 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
         trigger=IntervalTrigger(seconds=poll_interval),
         args=[bot],
         id="check_all_apps",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        self_ping,
+        "interval",
+        minutes=10,
+        id="self_ping",
         max_instances=1,
         coalesce=True,
     )
