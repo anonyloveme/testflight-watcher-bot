@@ -17,22 +17,28 @@ def welcome_message(first_name: str) -> str:
 
 
 def app_info_message(app_info: dict) -> str:
-	"""Build formatted app information message before watch confirm."""
 	app_name = escape(str(app_info.get("app_name", "Unknown App")))
-	app_id_raw = str(app_info.get("app_id", ""))
-	app_id = escape(app_id_raw)
-	status = str(app_info.get("status", "UNKNOWN")).upper()
-	status_label = {
-		"OPEN": "🟢 OPEN — Còn slot!",
-		"CLOSED": "🔴 CLOSED — Hết slot",
-	}.get(status, "⚫ UNKNOWN")
-	join_url = f"https://testflight.apple.com/join/{escape(app_id_raw)}"
+	app_id   = escape(str(app_info.get("app_id", "")))
+	status   = str(app_info.get("status", "UNKNOWN")).upper()
+	join_url = f"https://testflight.apple.com/join/{app_id}"
+
+	if status == "OPEN":
+		status_block = (
+			"🟢 <b>CÒN SLOT!</b> Có thể tham gia ngay!\n"
+			f"👉 <a href='{join_url}'>Mở TestFlight để tham gia</a>"
+		)
+	elif status == "CLOSED":
+		status_block = (
+			"🔴 <b>HẾT SLOT.</b> Beta đang đầy.\n"
+			"🔔 Bot sẽ thông báo ngay khi có slot mới!"
+		)
+	else:
+		status_block = "⚫ Không xác định được trạng thái."
 
 	return (
 		f"📱 <b>{app_name}</b>\n"
-		f"🆔 App ID: <code>{app_id}</code>\n"
-		f"🔗 <a href='{join_url}'>Xem trên TestFlight</a>\n"
-		f"{status_label}\n\n"
+		f"🆔 <code>{app_id}</code>\n\n"
+		f"{status_block}\n\n"
 		"Bạn có muốn theo dõi app này không?"
 	)
 

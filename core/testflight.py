@@ -1,10 +1,10 @@
-"""TestFlight status checking — scrapes join page HTML, based on jacopo-j/testflight-watcher."""
+"""TestFlight status checking — scrapes join page HTML như source gốc jacopo-j/testflight-watcher."""
 
 import re
 import time
 
 import requests
-from lxml import html
+from lxml import html as lxml_html
 
 TESTFLIGHT_URL = "https://testflight.apple.com/join/{}"
 XPATH_STATUS = '//*[@class="beta-status"]/span/text()'
@@ -46,7 +46,7 @@ def fetch_app_info(app_id: str) -> dict:
             continue
 
         try:
-            page = html.fromstring(response.text)
+            page = lxml_html.fromstring(response.text)
 
             # Lấy tên app từ <title>
             titles = page.xpath(XPATH_TITLE)

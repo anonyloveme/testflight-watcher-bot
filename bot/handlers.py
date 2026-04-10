@@ -19,7 +19,7 @@ from telegram.ext import (
 from bot.keyboards import *
 from bot.messages import *
 from bot.messages import recheck_message
-from core.departures import find_app_on_departures, get_open_apps_cached
+from core.departures import get_open_apps_cached
 from core.testflight import fetch_app_info, validate_app_id
 from database import get_db
 from database.crud import *
@@ -255,7 +255,8 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
 
         try:
-            app_info = fetch_app_info(app_id)
+            # Wrap sync fetch trong thread để không block event loop
+            app_info = await asyncio.to_thread(fetch_app_info, app_id)
             app_info["source"] = "testflight"
         except ValueError:
             await message.reply_text(
@@ -266,28 +267,11 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
             return ConversationHandler.END
         except Exception:
             await message.reply_text(
-                "❌ Không thể kết nối TestFlight API. Vui lòng thử lại sau.",
+                "❌ Không thể kết nối TestFlight. Vui lòng thử lại sau.",
                 parse_mode="HTML",
                 reply_markup=main_menu_keyboard(),
             )
             return ConversationHandler.END
-
-        async def _enrich_later():
-            try:
-                dep_info = await asyncio.to_thread(find_app_on_departures, app_id)
-                if dep_info:
-                    app_info.update(
-                        {
-                            "app_name": dep_info.get("app_name") or app_info.get("app_name"),
-                            "categories": dep_info.get("categories", []),
-                            "description": dep_info.get("description", ""),
-                            "source": "departures.to",
-                        }
-                    )
-            except Exception:
-                pass
-
-        asyncio.create_task(_enrich_later())
 
         context.user_data["pending_app"] = app_info
         await message.reply_text(
