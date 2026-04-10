@@ -68,13 +68,20 @@ def get_or_create_app(
 	"""Get an app by app_id or create a new app record."""
 	app = get_app_by_app_id(db, app_id)
 	if app:
+		# Backfill app_name when legacy rows were created without it.
+		if not app.app_name and app_name:
+			app.app_name = app_name
+			db.commit()
+			db.refresh(app)
 		return app
 
 	app = App(
 		app_id=app_id,
 		app_name=app_name,
 		bundle_id=bundle_id,
-		current_status=status,
+		# Always start with UNKNOWN so the first scheduler check can detect
+		# the real status transition and notify watchers.
+		current_status="UNKNOWN",
 		last_checked=datetime.now(),
 	)
 	db.add(app)

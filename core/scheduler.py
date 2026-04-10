@@ -55,33 +55,39 @@ async def check_all_apps(bot: Bot):
                     continue
 
                 app_name = updated_app.app_name or updated_app.app_id
-                if old_status == "CLOSED" and new_status == "OPEN":
+                if new_status == "OPEN" and old_status != "OPEN":
+                    # Notify slot-open on UNKNOWN->OPEN and CLOSED->OPEN.
                     watchers = get_watchers_of_app(db, updated_app.app_id)
-                    result = await notify_slot_opened(
-                        bot,
-                        watchers,
-                        app_name=app_name,
-                        app_id=updated_app.app_id,
-                    )
+                    if watchers:
+                        result = await notify_slot_opened(
+                            bot,
+                            watchers,
+                            app_name=app_name,
+                            app_id=updated_app.app_id,
+                        )
 
-                    # Auto-unwatch users that opted in for this app.
-                    for user in watchers:
-                        user_watches = get_user_watches(db, user.chat_id)
-                        for watch in user_watches:
-                            if (
-                                watch.app
-                                and watch.app.app_id == updated_app.app_id
-                                and watch.auto_unwatch
-                            ):
-                                remove_watch(db, user.chat_id, updated_app.app_id)
+                        # Auto-unwatch users that opted in for this app.
+                        for user in watchers:
+                            user_watches = get_user_watches(db, user.chat_id)
+                            for watch in user_watches:
+                                if (
+                                    watch.app
+                                    and watch.app.app_id == updated_app.app_id
+                                    and watch.auto_unwatch
+                                ):
+                                    remove_watch(db, user.chat_id, updated_app.app_id)
 
-                    logger.info("[OPEN] %s - Da notify %s users", app_name, result["sent"])
-                    await notify_admin(
-                        bot,
-                        f"🟢 <b>OPEN</b> {app_name} - sent: {result['sent']}, failed: {result['failed']}",
-                    )
+                        logger.info("[OPEN] %s -> notified %s users", app_name, result["sent"])
+                        await notify_admin(
+                            bot,
+                            f"🟢 <b>OPEN</b> {app_name} ({updated_app.app_id})\n"
+                            f"sent: {result['sent']}, failed: {result['failed']}",
+                        )
+                    else:
+                        logger.info("[OPEN] %s -> no watchers", app_name)
 
-                elif old_status == "OPEN" and new_status == "CLOSED":
+                elif new_status == "CLOSED" and old_status == "OPEN":
+                    # Only notify close if app was previously OPEN.
                     watchers = get_watchers_of_app(db, updated_app.app_id)
                     close_watchers = []
                     for user in watchers:
@@ -95,17 +101,21 @@ async def check_all_apps(bot: Bot):
                                 close_watchers.append(user)
                                 break
 
-                    result = await notify_slot_closed(
-                        bot,
-                        close_watchers,
-                        app_name=app_name,
-                        app_id=updated_app.app_id,
-                    )
-                    logger.info("[CLOSED] %s", app_name)
-                    await notify_admin(
-                        bot,
-                        f"🔴 <b>CLOSED</b> {app_name} - sent: {result['sent']}, failed: {result['failed']}",
-                    )
+                    if close_watchers:
+                        result = await notify_slot_closed(
+                            bot,
+                            close_watchers,
+                            app_name=app_name,
+                            app_id=updated_app.app_id,
+                        )
+                        logger.info("[CLOSED] %s -> notified %s users", app_name, result["sent"])
+                        await notify_admin(
+                            bot,
+                            f"🔴 <b>CLOSED</b> {app_name} ({updated_app.app_id})\n"
+                            f"sent: {result['sent']}, failed: {result['failed']}",
+                        )
+                    else:
+                        logger.info("[CLOSED] %s -> no watchers with notify_on_close", app_name)
             except Exception as exc:
                 logger.exception("Error checking app %s: %s", app.app_id, exc)
 
