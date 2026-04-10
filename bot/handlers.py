@@ -61,6 +61,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db_gen.close()
 
         await update.effective_message.reply_text(
+            "👇 Menu luôn hiển thị bên dưới để thao tác nhanh!",
+            reply_markup=persistent_menu_keyboard(),
+        )
+
+        await update.effective_message.reply_text(
             welcome_message(user.first_name or "bạn"),
             parse_mode="HTML",
             reply_markup=main_menu_keyboard(),
@@ -579,6 +584,55 @@ async def show_popular_apps(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[show_popular_apps] Error: {exc}")
 
 
+async def show_popular_apps_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show popular apps when invoked from reply keyboard text."""
+    try:
+        message = update.effective_message
+        if not message:
+            return
+
+        try:
+            from core.popular_apps import POPULAR_APPS
+        except Exception:
+            POPULAR_APPS = []
+
+        if not POPULAR_APPS:
+            await message.reply_text(
+                "📋 Chưa có danh sách app phổ biến.",
+                parse_mode="HTML",
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+
+        await message.reply_text(
+            "📋 <b>App phổ biến</b>\nChọn app để theo dõi nhanh:",
+            parse_mode="HTML",
+            reply_markup=popular_apps_keyboard(POPULAR_APPS),
+        )
+    except Exception as exc:
+        print(f"[show_popular_apps_text] Error: {exc}")
+
+
+async def menu_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle fixed text actions from persistent reply keyboard."""
+    message = update.effective_message
+    if not message or not message.text:
+        return
+
+    text = message.text.strip()
+
+    if text == "📱 App đang theo dõi":
+        await show_my_list(update, context)
+    elif text == "🌐 Khám phá OPEN":
+        await discover_handler(update, context)
+    elif text == "📋 App phổ biến":
+        await show_popular_apps_text(update, context)
+    elif text == "📊 Thống kê":
+        await show_stats(update, context)
+    elif text == "❓ Hướng dẫn":
+        await help_handler(update, context)
+
+
 async def show_my_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show user's current watch list."""
     try:
@@ -641,6 +695,7 @@ def setup_handlers(app: Application):
         entry_points=[
             CommandHandler("watch", watch_start),
             CallbackQueryHandler(watch_start, pattern="^watch$"),
+            MessageHandler(filters.Text(["➕ Theo dõi app"]), watch_start),
         ],
         states={
             WAITING_APP_ID: [
@@ -656,5 +711,17 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("discover", discover_handler))
+
+    menu_filter = filters.Text(
+        [
+            "📱 App đang theo dõi",
+            "🌐 Khám phá OPEN",
+            "📋 App phổ biến",
+            "📊 Thống kê",
+            "❓ Hướng dẫn",
+        ]
+    )
+    app.add_handler(MessageHandler(menu_filter, menu_text_handler))
+
     app.add_handler(watch_conversation)
     app.add_handler(CallbackQueryHandler(callback_handler))

@@ -1,6 +1,11 @@
 """Inline keyboard builders for bot interactions."""
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -119,4 +124,27 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     """Return one-button cancel keyboard."""
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("❌ Huỷ", callback_data="cancel")]]
+    )
+
+
+def persistent_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Return a persistent reply keyboard for quick actions."""
+    keyboard = [
+        [
+            KeyboardButton("➕ Theo dõi app"),
+            KeyboardButton("📱 App đang theo dõi"),
+        ],
+        [
+            KeyboardButton("🌐 Khám phá OPEN"),
+            KeyboardButton("📋 App phổ biến"),
+        ],
+        [
+            KeyboardButton("📊 Thống kê"),
+            KeyboardButton("❓ Hướng dẫn"),
+        ],
+    ]
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        is_persistent=True,
     )
