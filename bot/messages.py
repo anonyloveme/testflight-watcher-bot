@@ -186,3 +186,65 @@ def recheck_message(app_name: str, app_id: str, status: str) -> str:
 		f"{status_label}\n\n"
 		"🕐 Vừa kiểm tra xong"
 	)
+
+
+def check_all_loading_message(count: int) -> str:
+	"""Build loading message while checking all watched apps."""
+	return (
+		f"🔄 <b>Đang kiểm tra {count} app...</b>\n\n"
+		"⏳ Vui lòng chờ, bot đang ping từng TestFlight link.\n"
+		"<i>Thường mất 5-15 giây tuỳ số lượng app.</i>"
+	)
+
+
+def check_all_result_message(results: list[dict]) -> str:
+	"""Build grouped OPEN/CLOSED/UNKNOWN summary for check-all action."""
+	if not results:
+		return (
+			"📭 Bạn chưa theo dõi app nào.\n"
+			"Dùng <b>➕ Theo dõi app</b> để bắt đầu!"
+		)
+
+	open_apps = [row for row in results if row["new_status"] == "OPEN"]
+	closed_apps = [row for row in results if row["new_status"] == "CLOSED"]
+	unknown_apps = [row for row in results if row["new_status"] == "UNKNOWN"]
+	changed_apps = [
+		row
+		for row in results
+		if row["old_status"] != row["new_status"] and row["new_status"] != "UNKNOWN"
+	]
+
+	lines = [f"🔄 <b>Kết quả kiểm tra {len(results)} app</b>\n"]
+
+	if open_apps:
+		lines.append("🟢 <b>CÒN SLOT — Vào ngay!</b>")
+		for row in open_apps:
+			name = escape(row["app_name"][:25])
+			app_id = escape(row["app_id"])
+			changed_tag = " 🆕" if row["old_status"] != "OPEN" else ""
+			lines.append(
+				f"  • <a href='https://testflight.apple.com/join/{app_id}'>"
+				f"{name}</a>{changed_tag} (<code>{app_id}</code>)"
+			)
+		lines.append("")
+
+	if closed_apps:
+		lines.append("🔴 <b>Chưa có slot</b>")
+		for row in closed_apps:
+			name = escape(row["app_name"][:25])
+			app_id = escape(row["app_id"])
+			lines.append(f"  • {name} (<code>{app_id}</code>)")
+		lines.append("")
+
+	if unknown_apps:
+		lines.append("⚫ <b>Không xác định được</b>")
+		for row in unknown_apps:
+			name = escape(row["app_name"][:25])
+			lines.append(f"  • {name}")
+		lines.append("")
+
+	if changed_apps:
+		lines.append(f"⚡ <b>{len(changed_apps)} app vừa thay đổi trạng thái!</b>")
+
+	lines.append("🕐 <i>Vừa kiểm tra xong</i>")
+	return "\n".join(lines)

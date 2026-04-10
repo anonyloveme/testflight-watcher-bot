@@ -5,7 +5,7 @@ from html import escape
 import os
 import re
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -18,7 +18,11 @@ from telegram.ext import (
 
 from bot.keyboards import *
 from bot.messages import *
-from bot.messages import recheck_message
+from bot.messages import (
+    check_all_loading_message,
+    check_all_result_message,
+    recheck_message,
+)
 from core.departures import get_open_apps_cached
 from core.testflight import fetch_app_info, validate_app_id
 from database import get_db
@@ -328,8 +332,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer()
         data = query.data or ""
 
-        if data == "popular":
-            await show_popular_apps(update, context)
+        if data == "check_all":
+            await check_all_handler(update, context)
             return
 
         if data == "watch":
@@ -555,82 +559,127 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[callback_handler] Error: {exc}")
 
 
-async def show_popular_apps(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show popular apps list from core.popular_apps."""
+async def check_all_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check live status for all apps currently watched by the user."""
     try:
         query = update.callback_query
-        if not query:
+        message = update.effective_message
+        user = update.effective_user
+        if not user:
             return
 
+        db_gen, db = _with_db_session()
         try:
-            from core.popular_apps import POPULAR_APPS
-        except Exception:
-            POPULAR_APPS = []
+            watches = get_user_watches(db, user.id)
+        finally:
+            db_gen.close()
 
-        if not POPULAR_APPS:
-            await query.edit_message_text(
-                "📋 Chưa có danh sách app phổ biến.",
-                parse_mode="HTML",
-                reply_markup=main_menu_keyboard(),
+        if not watches:
+            no_watch_text = (
+                "📭 Bạn chưa theo dõi app nào.\n"
+                "Dùng <b>➕ Theo dõi app</b> để bắt đầu!"
             )
+            if query:
+                await query.edit_message_text(
+                    no_watch_text,
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
+            elif message:
+                await message.reply_text(
+                    no_watch_text,
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
             return
 
-        await query.edit_message_text(
-            "📋 <b>App phổ biến</b>\nChọn app để theo dõi nhanh:",
-            parse_mode="HTML",
-            reply_markup=popular_apps_keyboard(POPULAR_APPS),
+        loading_text = check_all_loading_message(len(watches))
+        if query:
+            await query.edit_message_text(loading_text, parse_mode="HTML")
+        elif message:
+            await message.reply_text(loading_text, parse_mode="HTML")
+        else:
+            return
+
+        results: list[dict] = []
+        for watch in watches:
+            app = watch.app
+            app_id = app.app_id
+            app_name = app.app_name or app_id
+            old_status = app.current_status or "UNKNOWN"
+
+            try:
+                fresh_info = await asyncio.to_thread(fetch_app_info, app_id)
+                new_status = fresh_info.get("status", "UNKNOWN")
+            except Exception:
+                new_status = "UNKNOWN"
+
+            if new_status != "UNKNOWN" and new_status != old_status:
+                db_gen, db = _with_db_session()
+                try:
+                    update_app_status(db, app_id, new_status)
+                finally:
+                    db_gen.close()
+
+            results.append(
+                {
+                    "app_name": app_name,
+                    "app_id": app_id,
+                    "old_status": old_status,
+                    "new_status": new_status,
+                }
+            )
+
+            await asyncio.sleep(0.5)
+
+        result_text = check_all_result_message(results)
+        result_keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("📱 Xem danh sách", callback_data="mylist")],
+                [InlineKeyboardButton("🏠 Menu chính", callback_data="back_main")],
+            ]
         )
+
+        if query:
+            await query.edit_message_text(
+                result_text,
+                parse_mode="HTML",
+                reply_markup=result_keyboard,
+                disable_web_page_preview=True,
+            )
+        elif message:
+            await message.reply_text(
+                result_text,
+                parse_mode="HTML",
+                reply_markup=result_keyboard,
+                disable_web_page_preview=True,
+            )
     except Exception as exc:
-        print(f"[show_popular_apps] Error: {exc}")
+        print(f"[check_all_handler] Error: {exc}")
 
 
-async def show_popular_apps_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show popular apps when invoked from reply keyboard text."""
+async def menu_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle fixed text actions from persistent reply keyboard."""
     try:
         message = update.effective_message
         if not message:
             return
 
-        try:
-            from core.popular_apps import POPULAR_APPS
-        except Exception:
-            POPULAR_APPS = []
-
-        if not POPULAR_APPS:
-            await message.reply_text(
-                "📋 Chưa có danh sách app phổ biến.",
-                parse_mode="HTML",
-                reply_markup=main_menu_keyboard(),
-            )
-            return
-
-        await message.reply_text(
-            "📋 <b>App phổ biến</b>\nChọn app để theo dõi nhanh:",
-            parse_mode="HTML",
-            reply_markup=popular_apps_keyboard(POPULAR_APPS),
-        )
+        text = (message.text or "").strip()
+        if text == "➕ Theo dõi app":
+            await watch_start(update, context)
+        elif text == "📱 Danh sách của tôi":
+            await show_my_list(update, context)
+        elif text == "🔄 Kiểm tra tất cả":
+            await check_all_handler(update, context)
+        elif text == "🌐 Khám phá OPEN":
+            await discover_handler(update, context)
+        elif text == "📊 Thống kê":
+            await show_stats(update, context)
+        elif text == "❓ Hướng dẫn":
+            await help_handler(update, context)
     except Exception as exc:
-        print(f"[show_popular_apps_text] Error: {exc}")
-
-
-async def menu_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle fixed text actions from persistent reply keyboard."""
-    message = update.effective_message
-    if not message or not message.text:
-        return
-
-    text = message.text.strip()
-
-    if text == "📱 App đang theo dõi":
-        await show_my_list(update, context)
-    elif text == "🌐 Khám phá OPEN":
-        await discover_handler(update, context)
-    elif text == "📋 App phổ biến":
-        await show_popular_apps_text(update, context)
-    elif text == "📊 Thống kê":
-        await show_stats(update, context)
-    elif text == "❓ Hướng dẫn":
-        await help_handler(update, context)
+        print(f"[menu_text_handler] Error: {exc}")
 
 
 async def show_my_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -754,9 +803,9 @@ def setup_handlers(app: Application):
 
     menu_filter = filters.Text(
         [
-            "📱 App đang theo dõi",
+            "📱 Danh sách của tôi",
+            "🔄 Kiểm tra tất cả",
             "🌐 Khám phá OPEN",
-            "📋 App phổ biến",
             "📊 Thống kê",
             "❓ Hướng dẫn",
         ]

@@ -9,17 +9,19 @@ from telegram import (
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
-    """Return the main menu keyboard."""
+    """Return the main menu keyboard focused on core actions."""
     keyboard = [
         [
             InlineKeyboardButton("➕ Theo dõi app", callback_data="watch"),
-            InlineKeyboardButton("📱 App đang theo dõi", callback_data="mylist"),
+            InlineKeyboardButton("📱 Danh sách của tôi", callback_data="mylist"),
+        ],
+        [
+            InlineKeyboardButton("🔄 Kiểm tra tất cả", callback_data="check_all"),
         ],
         [
             InlineKeyboardButton("🌐 Khám phá departures.to", callback_data="discover"),
-            InlineKeyboardButton("📋 App phổ biến", callback_data="popular"),
+            InlineKeyboardButton("📊 Thống kê", callback_data="stats"),
         ],
-        [InlineKeyboardButton("📊 Thống kê", callback_data="stats")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -44,7 +46,7 @@ def confirm_watch_keyboard(app_id: str) -> InlineKeyboardMarkup:
 
 
 def my_list_keyboard(watches: list) -> InlineKeyboardMarkup:
-    """Return keyboard listing user watches."""
+    """Return keyboard listing user watches with compact app labels."""
     rows: list[list[InlineKeyboardButton]] = []
 
     for watch in watches:
@@ -56,14 +58,19 @@ def my_list_keyboard(watches: list) -> InlineKeyboardMarkup:
         elif status == "CLOSED":
             icon = "🔴"
 
-        app_name = app.app_name or "Unknown App"
+        app_name = (app.app_name or "Unknown App")[:20]
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{icon} {app_name} ({app.app_id})",
+                    f"{icon} {app_name}",
                     callback_data=f"detail:{app.app_id}",
                 )
             ]
+        )
+
+    if watches:
+        rows.append(
+            [InlineKeyboardButton("🔄 Kiểm tra tất cả ngay", callback_data="check_all")]
         )
 
     rows.append([InlineKeyboardButton("🔙 Quay lại", callback_data="back_main")])
@@ -132,14 +139,16 @@ def persistent_menu_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
         [
             KeyboardButton("➕ Theo dõi app"),
-            KeyboardButton("📱 App đang theo dõi"),
+            KeyboardButton("📱 Danh sách của tôi"),
+        ],
+        [
+            KeyboardButton("🔄 Kiểm tra tất cả"),
         ],
         [
             KeyboardButton("🌐 Khám phá OPEN"),
-            KeyboardButton("📋 App phổ biến"),
+            KeyboardButton("📊 Thống kê"),
         ],
         [
-            KeyboardButton("📊 Thống kê"),
             KeyboardButton("❓ Hướng dẫn"),
         ],
     ]
