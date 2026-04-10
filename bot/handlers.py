@@ -99,13 +99,23 @@ async def discover_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if query:
             await query.answer()
-            await query.edit_message_text("🔍 Đang tìm app đang mở slot...", parse_mode="HTML")
+            await query.edit_message_text(
+                "🌐 Đang tải danh sách app từ departures.to...\n⏳ Vui lòng chờ 10-20 giây",
+                parse_mode="HTML",
+            )
         elif message:
-            await message.reply_text("🔍 Đang tìm app đang mở slot...", parse_mode="HTML")
+            await message.reply_text(
+                "🌐 Đang tải danh sách app từ departures.to...\n⏳ Vui lòng chờ 10-20 giây",
+                parse_mode="HTML",
+            )
 
         open_apps = await asyncio.to_thread(get_open_apps_cached)
         if not open_apps:
-            no_results_text = "Hiện không tìm thấy app nào đang mở slot"
+            no_results_text = (
+                "😔 Hiện không tìm thấy app nào đang mở slot.\n"
+                "Thử lại sau vài phút hoặc vào thẳng "
+                "<a href='https://departures.to'>departures.to</a> để xem."
+            )
             if query:
                 await query.edit_message_text(
                     no_results_text,
@@ -127,7 +137,24 @@ async def discover_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "status": app.get("status", "OPEN"),
             }
             for app in open_apps[:10]
+            if app.get("app_id")
         ]
+
+        if not display_apps:
+            no_results_text = "😔 Không lấy được TestFlight link từ departures.to. Thử lại sau."
+            if query:
+                await query.edit_message_text(
+                    no_results_text,
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
+            elif message:
+                await message.reply_text(
+                    no_results_text,
+                    parse_mode="HTML",
+                    reply_markup=main_menu_keyboard(),
+                )
+            return
 
         text = discover_message(len(open_apps))
         keyboard = popular_apps_keyboard(display_apps)
@@ -188,7 +215,7 @@ async def watch_receive_app_id(update: Update, context: ContextTypes.DEFAULT_TYP
         ]
         app_id = None
         for pattern in patterns:
-            match = re.search(pattern, user_input, re.IGNORECASE)
+            match = re.search(pattern, user_input)
             if match:
                 app_id = match.group(1)
                 break

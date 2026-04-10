@@ -48,21 +48,15 @@ def _fetch_url(url: str) -> Optional[str]:
     return None
 
 
-def _parse_apps_from_html(html: str) -> list[dict]:
-    """
-    Parse HTML từ trang listing departures.to.
-    Mỗi app card là thẻ <a href="/apps/{id}"> chứa tên app.
-    TestFlight app_id được extract từ link testflight.apple.com/join/{app_id}
-    nếu có trong card, hoặc None nếu phải scrape detail.
-    """
+def _parse_listing_page(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     apps = []
     seen: set[int] = set()
 
     for anchor in soup.find_all("a", href=True):
-        href = anchor["href"]
-        # Chỉ lấy link dạng /apps/{số}
-        id_match = re.search(r"^/apps/(\d+)$", href)
+        href = str(anchor.get("href", ""))
+        # Match /apps/12345 — dùng fullmatch thay vì search với ^ $
+        id_match = re.fullmatch(r"/apps/(\d+)", href)
         if not id_match:
             continue
 
@@ -71,38 +65,22 @@ def _parse_apps_from_html(html: str) -> list[dict]:
             continue
         seen.add(departures_id)
 
-        # Lấy tên app
-        heading = anchor.find(["h3", "h2", "h4"])
-        if not heading:
-            continue
-        raw_name = heading.get_text(" ", strip=True)
-        # Bỏ "· Xh ago" ở cuối
-        app_name = re.sub(r"\s*·\s*.+ago.*$", "", raw_name).strip()
-        if not app_name:
+        # Lấy tên — text của toàn anchor, lọc bỏ "· Xh ago"
+        full_text = anchor.get_text(" ", strip=True)
+        # Tên app nằm trước " · "
+        app_name = full_text.split("·")[0].strip()
+        if not app_name or len(app_name) < 2:
             continue
 
-        # Thử tìm TestFlight link ngay trong card
-        app_id = None
-        for inner_a in anchor.find_all("a", href=True):
-            tf_match = re.search(
-                r"testflight\.apple\.com/join/([A-Za-z0-9]{8})",
-                inner_a["href"],
-            )
-            if tf_match:
-                app_id = tf_match.group(1)  # giữ nguyên case
-                break
-
-        apps.append(
-            {
-                "departures_id": departures_id,
-                "app_name": app_name,
-                "app_id": app_id,  # có thể None, cần scrape detail sau
-                "status": "OPEN",  # listing mặc định = Now Boarding = OPEN
-                "source": "departures.to",
-                "categories": [],
-                "description": [],
-            }
-        )
+        apps.append({
+            "departures_id": departures_id,
+            "app_name": app_name,
+            "app_id": None,   # cần scrape detail
+            "status": "OPEN",
+            "source": "departures.to",
+            "categories": [],
+            "description": "",
+        })
 
     return apps
 
@@ -133,48 +111,37 @@ def _scrape_detail_for_app_id(departures_id: int) -> Optional[str]:
     return None
 
 
-def scrape_open_apps(max_pages: int = 3) -> list[dict]:
-    """
-    Scrape danh sách app OPEN từ departures.to listing.
-    Với mỗi app, nếu không có app_id từ listing thì scrape detail để lấy.
-    Trả về list app có đầy đủ app_id (bỏ qua app không có TestFlight link).
-    """
+def scrape_open_apps(max_pages: int = 2) -> list[dict]:
     raw_apps: list[dict] = []
     seen_ids: set[int] = set()
 
-    # Bước 1: scrape listing pages, nhanh
     for page in range(1, max_pages + 1):
-        url = LISTING_URL if page == 1 else f"{LISTING_URL}?page={page}"
+        url = f"{BASE_URL}/apps" if page == 1 else f"{BASE_URL}/apps?page={page}"
         html = _fetch_url(url)
         if not html:
             break
-
-        page_apps = _parse_apps_from_html(html)
+        page_apps = _parse_listing_page(html)
         new_apps = [a for a in page_apps if a["departures_id"] not in seen_ids]
         if not new_apps:
             break
-
         for a in new_apps:
             seen_ids.add(a["departures_id"])
             raw_apps.append(a)
-
         if page < max_pages:
             time.sleep(0.5)
 
-    logger.info("Listing scrape done: %s apps found", len(raw_apps))
+    logger.info("Listing: %s apps parsed", len(raw_apps))
 
-    # Bước 2: với app chưa có app_id, scrape detail để lấy TestFlight link
+    # Chỉ scrape detail cho 15 app đầu để tránh timeout
     result: list[dict] = []
-    for app in raw_apps:
-        if not app.get("app_id"):
-            app_id = _scrape_detail_for_app_id(app["departures_id"])
-            if not app_id:
-                continue  # bỏ qua app không có TestFlight link
+    for app in raw_apps[:15]:
+        app_id = _scrape_detail_for_app_id(app["departures_id"])
+        if app_id:
             app["app_id"] = app_id
-            time.sleep(0.3)  # polite delay ngắn
-        result.append(app)
+            result.append(app)
+        time.sleep(0.3)
 
-    logger.info("Final open apps with app_id: %s", len(result))
+    logger.info("Final with app_id: %s apps", len(result))
     return result
 
 
