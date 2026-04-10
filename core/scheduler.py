@@ -9,8 +9,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from telegram import Bot
 
-from core.departures import get_popular_apps_from_departures
+from core.departures import check_testflight_status
 from core.notifier import notify_admin, notify_slot_closed, notify_slot_opened
+from core.popular_apps import get_popular_apps
 from core.testflight import check_app_status
 from database import get_db
 from database.crud import (
@@ -165,26 +166,41 @@ async def check_all_apps(bot: Bot):
 
 
 async def sync_popular_apps(bot: Bot):
-    """Sync popular apps from departures.to into the local database."""
+    """Sync manually curated popular apps and refresh their latest status."""
     db_gen, db = _with_db_session()
     try:
-        popular_apps = get_popular_apps_from_departures(limit=20)
+        popular_apps = get_popular_apps()[:20]
         count = 0
         for app in popular_apps:
             try:
-                get_or_create_app(
+                app_id = app.get("app_id", "")
+                app_name = app.get("app_name") or app.get("name", "")
+                if not app_id:
+                    continue
+
+                db_app = get_or_create_app(
                     db,
-                    app_id=app.get("app_id", ""),
-                    app_name=app.get("app_name", ""),
+                    app_id=app_id,
+                    app_name=app_name,
                     bundle_id="",
-                    status=app.get("status", "UNKNOWN"),
+                    status="UNKNOWN",
                 )
+
+                new_status = check_testflight_status(app_id)
+                if new_status in {"OPEN", "CLOSED"}:
+                    update_app_status(db, app_id, new_status)
+
                 count += 1
-                logger.info("Synced popular app: %s", app.get("app_name", app.get("app_id", "unknown")))
+                logger.info(
+                    "Synced popular app: %s (%s) status=%s",
+                    db_app.app_name or app_id,
+                    app_id,
+                    new_status,
+                )
             except Exception as exc:
                 logger.warning("Failed to sync popular app %s: %s", app.get("app_id"), exc)
 
-        logger.info("Synced %s popular apps from departures.to", count)
+        logger.info("Synced %s popular apps", count)
     except Exception as exc:
         logger.warning("Popular apps sync failed: %s", exc)
     finally:
