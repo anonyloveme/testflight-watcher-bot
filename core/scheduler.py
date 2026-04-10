@@ -33,7 +33,7 @@ def _with_db_session():
 
 
 async def check_all_apps(bot: Bot):
-    """Periodic job that checks all tracked apps and sends notifications."""
+    """Periodic job: check tracked apps and notify on status transitions."""
     db_gen, db = _with_db_session()
     try:
         apps = get_all_apps(db)
@@ -41,23 +41,49 @@ async def check_all_apps(bot: Bot):
             logger.info("No apps to check")
             return
 
+        logger.info("Checking %d apps...", len(apps))
+
         for app in apps:
             try:
                 old_status = app.current_status
                 new_status = check_app_status(app.app_id)
+
+                logger.debug(
+                    "App %s (%s): old=%s new=%s",
+                    app.app_name,
+                    app.app_id,
+                    old_status,
+                    new_status,
+                )
+
                 if new_status not in {"OPEN", "CLOSED"}:
+                    logger.debug("App %s: status UNKNOWN, skip", app.app_id)
                     continue
+
                 if new_status == old_status:
+                    # Touch last_checked even when status does not change.
+                    update_app_status(db, app.app_id, new_status)
                     continue
 
                 updated_app = update_app_status(db, app.app_id, new_status)
                 if not updated_app:
+                    logger.warning("update_app_status returned None for %s", app.app_id)
                     continue
 
                 app_name = updated_app.app_name or updated_app.app_id
+                logger.info(
+                    "Status changed: %s (%s): %s -> %s",
+                    app_name,
+                    app.app_id,
+                    old_status,
+                    new_status,
+                )
+
+                watchers = get_watchers_of_app(db, updated_app.app_id)
+                logger.info("App %s has %d watchers", app.app_id, len(watchers))
+
                 if new_status == "OPEN" and old_status != "OPEN":
-                    # Notify slot-open on UNKNOWN->OPEN and CLOSED->OPEN.
-                    watchers = get_watchers_of_app(db, updated_app.app_id)
+                    # Notify on UNKNOWN->OPEN and CLOSED->OPEN.
                     if watchers:
                         result = await notify_slot_opened(
                             bot,
@@ -76,19 +102,28 @@ async def check_all_apps(bot: Bot):
                                     and watch.auto_unwatch
                                 ):
                                     remove_watch(db, user.chat_id, updated_app.app_id)
+                                    logger.debug(
+                                        "Auto-unwatched user %s from app %s",
+                                        user.chat_id,
+                                        app.app_id,
+                                    )
 
-                        logger.info("[OPEN] %s -> notified %s users", app_name, result["sent"])
+                        logger.info(
+                            "[OPEN] %s -> sent=%d failed=%d",
+                            app_name,
+                            result["sent"],
+                            result["failed"],
+                        )
                         await notify_admin(
                             bot,
-                            f"🟢 <b>OPEN</b> {app_name} ({updated_app.app_id})\n"
-                            f"sent: {result['sent']}, failed: {result['failed']}",
+                            f"🟢 <b>OPEN</b>: {app_name} (<code>{updated_app.app_id}</code>)\n"
+                            f"📤 Sent: {result['sent']} | ❌ Failed: {result['failed']}",
                         )
                     else:
-                        logger.info("[OPEN] %s -> no watchers", app_name)
+                        logger.info("[OPEN] %s -> no watchers, skip notify", app_name)
 
                 elif new_status == "CLOSED" and old_status == "OPEN":
-                    # Only notify close if app was previously OPEN.
-                    watchers = get_watchers_of_app(db, updated_app.app_id)
+                    # Notify close only for OPEN->CLOSED.
                     close_watchers = []
                     for user in watchers:
                         user_watches = get_user_watches(db, user.chat_id)
@@ -108,18 +143,23 @@ async def check_all_apps(bot: Bot):
                             app_name=app_name,
                             app_id=updated_app.app_id,
                         )
-                        logger.info("[CLOSED] %s -> notified %s users", app_name, result["sent"])
+                        logger.info(
+                            "[CLOSED] %s -> sent=%d failed=%d",
+                            app_name,
+                            result["sent"],
+                            result["failed"],
+                        )
                         await notify_admin(
                             bot,
-                            f"🔴 <b>CLOSED</b> {app_name} ({updated_app.app_id})\n"
-                            f"sent: {result['sent']}, failed: {result['failed']}",
+                            f"🔴 <b>CLOSED</b>: {app_name} (<code>{updated_app.app_id}</code>)\n"
+                            f"📤 Sent: {result['sent']} | ❌ Failed: {result['failed']}",
                         )
                     else:
                         logger.info("[CLOSED] %s -> no watchers with notify_on_close", app_name)
             except Exception as exc:
                 logger.exception("Error checking app %s: %s", app.app_id, exc)
 
-        logger.info("Checked %s apps", len(apps))
+        logger.info("Done checking %d apps", len(apps))
     finally:
         db_gen.close()
 
@@ -154,17 +194,19 @@ async def sync_popular_apps(bot: Bot):
 def self_ping():
     """Ping own /health endpoint to prevent Render free tier sleep."""
     try:
-        render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+        render_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
         if render_url:
-            requests.get(f"{render_url}/health", timeout=10)
-            logger.info("Self-ping OK")
+            response = requests.get(f"{render_url}/health", timeout=10)
+            logger.info("Self-ping OK: %s", response.status_code)
+        else:
+            logger.debug("RENDER_EXTERNAL_URL not set, skip self-ping")
     except Exception as exc:
         logger.warning("Self-ping failed: %s", exc)
 
 
 def create_scheduler(bot: Bot) -> AsyncIOScheduler:
     """Create and configure periodic scheduler without starting it."""
-    poll_interval = int(os.environ.get("POLL_INTERVAL", "300"))
+    poll_interval = int(os.environ.get("POLL_INTERVAL", "60"))
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
         check_all_apps,
@@ -177,7 +219,7 @@ def create_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler.add_job(
         self_ping,
         "interval",
-        minutes=10,
+        minutes=5,
         id="self_ping",
         max_instances=1,
         coalesce=True,

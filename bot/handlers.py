@@ -689,6 +689,45 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"[show_stats] Error: {exc}")
 
 
+async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only command: compare DB status and live TestFlight status."""
+    admin_id = int(os.getenv("TELEGRAM_ADMIN_CHAT_ID", "0"))
+    user = update.effective_user
+    message = update.effective_message
+    if not user or not message or user.id != admin_id:
+        return
+
+    await message.reply_text("🔄 Đang force-check tất cả app...")
+
+    db_gen, db = _with_db_session()
+    try:
+        apps = get_all_apps(db)
+        if not apps:
+            await message.reply_text("⚠️ Không có app nào trong DB!")
+            return
+
+        lines = [f"📊 Tổng: <b>{len(apps)}</b> apps\n"]
+        for app in apps:
+            real_status = check_app_status(app.app_id)
+            db_status = app.current_status
+            match = "✅" if real_status == db_status else "⚠️ MISMATCH"
+            lines.append(
+                f"{match} <code>{app.app_id}</code> {app.app_name or ''}\n"
+                f"   DB: {db_status} | Real: {real_status}"
+            )
+
+        chunk = ""
+        for line in lines:
+            if len(chunk) + len(line) > 3500:
+                await message.reply_text(chunk, parse_mode="HTML")
+                chunk = ""
+            chunk += line + "\n"
+        if chunk:
+            await message.reply_text(chunk, parse_mode="HTML")
+    finally:
+        db_gen.close()
+
+
 def setup_handlers(app: Application):
     """Register all bot handlers to the Telegram application."""
     watch_conversation = ConversationHandler(
@@ -711,6 +750,7 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", help_handler))
     app.add_handler(CommandHandler("discover", discover_handler))
+    app.add_handler(CommandHandler("debug", debug_handler))
 
     menu_filter = filters.Text(
         [

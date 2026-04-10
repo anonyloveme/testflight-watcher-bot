@@ -96,16 +96,16 @@ def get_app_by_app_id(db: Session, app_id: str) -> App | None:
 
 
 def update_app_status(db: Session, app_id: str, new_status: str) -> App | None:
-	"""Update app status, history, and watcher_count."""
+	"""Update app status/history and always refresh last_checked/watcher_count."""
 	app = get_app_by_app_id(db, app_id)
 	if not app:
 		return None
 
 	old_status = app.current_status
-	app.current_status = new_status
 	app.last_checked = datetime.now()
 
 	if old_status != new_status:
+		app.current_status = new_status
 		history = StatusHistory(
 			app_id_fk=app.id,
 			old_status=old_status,
