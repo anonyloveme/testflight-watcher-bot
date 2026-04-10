@@ -48,56 +48,69 @@ def _fetch_url(url: str) -> Optional[str]:
     return None
 
 
-def _parse_listing_page(html: str) -> list[dict]:
+def _parse_apps_from_html(html: str) -> list[dict]:
     """
-    Parse listing page HTML — mỗi app card có dạng:
-    <a href="/apps/12345">
-      <h3>App Name</h3>
-      <span>Category</span>
-    </a>
-    Tất cả app trên listing mặc định đều là OPEN (Now Boarding).
+    Parse HTML từ trang listing departures.to.
+    Mỗi app card là thẻ <a href="/apps/{id}"> chứa tên app.
+    TestFlight app_id được extract từ link testflight.apple.com/join/{app_id}
+    nếu có trong card, hoặc None nếu phải scrape detail.
     """
     soup = BeautifulSoup(html, "html.parser")
     apps = []
-    seen_ids: set[int] = set()
+    seen: set[int] = set()
 
     for anchor in soup.find_all("a", href=True):
         href = anchor["href"]
-        match = re.search(r"^/apps/(\d+)$", href)
-        if not match:
+        # Chỉ lấy link dạng /apps/{số}
+        id_match = re.search(r"^/apps/(\d+)$", href)
+        if not id_match:
             continue
 
-        departures_id = int(match.group(1))
-        if departures_id in seen_ids:
+        departures_id = int(id_match.group(1))
+        if departures_id in seen:
             continue
-        seen_ids.add(departures_id)
+        seen.add(departures_id)
 
-        # Lấy tên app từ thẻ h3 hoặc h2 bên trong anchor
+        # Lấy tên app
         heading = anchor.find(["h3", "h2", "h4"])
-        app_name = heading.get_text(" ", strip=True) if heading else ""
-        # Bỏ phần " · Xh ago" ở cuối tên nếu có
-        app_name = re.sub(r"\s*·\s*\d+\w?\s*ago.*$", "", app_name).strip()
-
+        if not heading:
+            continue
+        raw_name = heading.get_text(" ", strip=True)
+        # Bỏ "· Xh ago" ở cuối
+        app_name = re.sub(r"\s*·\s*.+ago.*$", "", raw_name).strip()
         if not app_name:
             continue
+
+        # Thử tìm TestFlight link ngay trong card
+        app_id = None
+        for inner_a in anchor.find_all("a", href=True):
+            tf_match = re.search(
+                r"testflight\.apple\.com/join/([A-Za-z0-9]{8})",
+                inner_a["href"],
+            )
+            if tf_match:
+                app_id = tf_match.group(1)  # giữ nguyên case
+                break
 
         apps.append(
             {
                 "departures_id": departures_id,
                 "app_name": app_name,
+                "app_id": app_id,  # có thể None, cần scrape detail sau
                 "status": "OPEN",  # listing mặc định = Now Boarding = OPEN
                 "source": "departures.to",
-                "app_id": None,  # chưa có, cần scrape detail nếu cần
+                "categories": [],
+                "description": [],
             }
         )
 
     return apps
 
 
-def _scrape_app_detail(departures_id: int) -> Optional[dict]:
+def _scrape_detail_for_app_id(departures_id: int) -> Optional[str]:
     """
-    Scrape detail page để lấy TestFlight app_id, categories, description.
-    Chỉ gọi khi cần app_id cụ thể.
+    Scrape detail page chỉ để lấy TestFlight app_id.
+    Trả về app_id string hoặc None.
     """
     url = f"{BASE_URL}/apps/{departures_id}"
     html = _fetch_url(url)
@@ -105,89 +118,71 @@ def _scrape_app_detail(departures_id: int) -> Optional[dict]:
         return None
 
     soup = BeautifulSoup(html, "html.parser")
-
-    # Lấy TestFlight URL → extract app_id
-    testflight_url = ""
-    app_id = None
     for anchor in soup.find_all("a", href=True):
         href = anchor["href"]
-        if "testflight.apple.com/join/" in href:
-            testflight_url = href if href.startswith("http") else urljoin(BASE_URL, href)
-            tf_match = re.search(
-                r"testflight\.apple\.com/join/([A-Za-z0-9]{8})",
-                testflight_url,
-            )
-            if tf_match:
-                app_id = tf_match.group(1)  # giữ nguyên case, KHÔNG upper()
-            break
-
-    if not app_id:
-        return None
-
-    # Lấy description từ thẻ <p> đầu tiên
-    description = ""
-    para = soup.find("p")
-    if para:
-        description = para.get_text(" ", strip=True)
-        if len(description) > 200:
-            description = description[:200].rstrip() + "..."
-
-    # Lấy categories từ emoji text (departures.to dùng emoji + text)
-    categories: list[str] = []
-    page_text = soup.get_text(" ", strip=True)
-    cat_match = re.findall(r"[🎳🌐🎬🍿🏠🔦🛍🏦🪙🏃‍♀️⚽️🎨🔊🎧📢🤖💊🏋️📱🎮🗺️✈️🍔📸🎵🔬💰🎓]\s*[\w &/]+", page_text)
-    for cat in cat_match[:5]:
-        cat_clean = cat.strip()
-        if cat_clean and cat_clean not in categories:
-            categories.append(cat_clean)
-
-    return {
-        "app_id": app_id,
-        "testflight_url": testflight_url,
-        "description": description,
-        "categories": categories,
-        "departures_id": departures_id,
-    }
+        if "testflight.apple.com/join/" not in href:
+            continue
+        if not href.startswith("http"):
+            href = urljoin(BASE_URL, href)
+        tf_match = re.search(
+            r"testflight\.apple\.com/join/([A-Za-z0-9]{8})",
+            href,
+        )
+        if tf_match:
+            return tf_match.group(1)  # giữ nguyên case, KHÔNG upper()
+    return None
 
 
-def scrape_open_apps(max_pages: int = 5) -> list[dict]:
+def scrape_open_apps(max_pages: int = 3) -> list[dict]:
     """
-    Scrape danh sách app OPEN từ listing pages.
-    KHÔNG cần vào detail page — listing mặc định đã là Now Boarding.
-    Nhanh hơn rất nhiều so với cách cũ.
+    Scrape danh sách app OPEN từ departures.to listing.
+    Với mỗi app, nếu không có app_id từ listing thì scrape detail để lấy.
+    Trả về list app có đầy đủ app_id (bỏ qua app không có TestFlight link).
     """
-    all_apps: list[dict] = []
+    raw_apps: list[dict] = []
     seen_ids: set[int] = set()
 
+    # Bước 1: scrape listing pages, nhanh
     for page in range(1, max_pages + 1):
         url = LISTING_URL if page == 1 else f"{LISTING_URL}?page={page}"
         html = _fetch_url(url)
         if not html:
             break
 
-        page_apps = _parse_listing_page(html)
+        page_apps = _parse_apps_from_html(html)
         new_apps = [a for a in page_apps if a["departures_id"] not in seen_ids]
-
         if not new_apps:
-            break  # hết trang
+            break
 
-        for app in new_apps:
-            seen_ids.add(app["departures_id"])
-            all_apps.append(app)
-
-        logger.info("departures.to page %s: found %s apps", page, len(new_apps))
+        for a in new_apps:
+            seen_ids.add(a["departures_id"])
+            raw_apps.append(a)
 
         if page < max_pages:
-            time.sleep(0.5)  # polite delay, ngắn vì chỉ scrape listing
+            time.sleep(0.5)
 
-    logger.info("Total open apps from departures.to: %s", len(all_apps))
-    return all_apps
+    logger.info("Listing scrape done: %s apps found", len(raw_apps))
+
+    # Bước 2: với app chưa có app_id, scrape detail để lấy TestFlight link
+    result: list[dict] = []
+    for app in raw_apps:
+        if not app.get("app_id"):
+            app_id = _scrape_detail_for_app_id(app["departures_id"])
+            if not app_id:
+                continue  # bỏ qua app không có TestFlight link
+            app["app_id"] = app_id
+            time.sleep(0.3)  # polite delay ngắn
+        result.append(app)
+
+    logger.info("Final open apps with app_id: %s", len(result))
+    return result
 
 
 def get_open_apps_cached() -> list[dict]:
     """Return cached open apps, refresh mỗi 30 phút."""
     now = datetime.utcnow()
     if _open_cache["data"] and _open_cache["expires_at"] > now:
+        logger.info("Returning cached open apps (%s items)", len(_open_cache["data"]))
         return _open_cache["data"]
 
     data = scrape_open_apps()
@@ -198,11 +193,11 @@ def get_open_apps_cached() -> list[dict]:
 
 def find_app_on_departures(app_id: str) -> Optional[dict]:
     """
-    Tìm app trên departures.to theo TestFlight app_id.
-    Dùng search endpoint, chỉ scrape 1 detail page nếu tìm thấy.
-    Cache 30 phút.
+    Tìm app theo TestFlight app_id trên departures.to.
+    Dùng search endpoint, cache 30 phút.
+    KHÔNG gọi upper() — app_id case-sensitive.
     """
-    cache_key = app_id  # giữ nguyên case
+    cache_key = app_id
     now = datetime.utcnow()
     cached = _search_cache.get(cache_key)
     if cached and cached["expires_at"] > now:
@@ -210,59 +205,38 @@ def find_app_on_departures(app_id: str) -> Optional[dict]:
 
     result = None
     try:
-        # Bước 1: search bằng app_id
         search_url = f"{BASE_URL}/search?q={app_id}"
         html = _fetch_url(search_url)
         if html:
             soup = BeautifulSoup(html, "html.parser")
             for anchor in soup.find_all("a", href=True):
-                m = re.search(r"^/apps/(\d+)$", anchor["href"])
-                if not m:
+                id_match = re.search(r"^/apps/(\d+)$", anchor["href"])
+                if not id_match:
                     continue
-                detail = _scrape_app_detail(int(m.group(1)))
-                if detail and detail.get("app_id") == app_id:
-                    # Lấy tên app từ anchor text
+                departures_id = int(id_match.group(1))
+                found_id = _scrape_detail_for_app_id(departures_id)
+                if found_id == app_id:
                     heading = anchor.find(["h3", "h2", "h4"])
-                    app_name = heading.get_text(" ", strip=True) if heading else ""
-                    app_name = re.sub(r"\s*·\s*\d+\w?\s*ago.*$", "", app_name).strip()
+                    app_name = ""
+                    if heading:
+                        app_name = re.sub(r"\s*·\s*.+ago.*$", "", heading.get_text(" ", strip=True)).strip()
                     result = {
-                        **detail,
+                        "app_id": app_id,
                         "app_name": app_name or f"App {app_id}",
                         "status": "OPEN",
                         "source": "departures.to",
+                        "categories": [],
+                        "description": "",
+                        "departures_id": departures_id,
                     }
                     break
     except Exception as exc:
-        logger.warning("find_app_on_departures failed for %s: %s", app_id, exc)
+        logger.warning("find_app_on_departures error for %s: %s", app_id, exc)
 
     _search_cache[cache_key] = {"data": result, "expires_at": now + timedelta(minutes=30)}
     return result
 
 
 def get_popular_apps_from_departures(limit: int = 20) -> list[dict]:
-    """
-    Lấy danh sách app phổ biến đang OPEN từ departures.to.
-    Với mỗi app cần scrape detail để lấy app_id (TestFlight ID).
-    Chỉ dùng cho scheduler sync — không dùng trong Telegram handler.
-    """
-    open_apps = scrape_open_apps(max_pages=3)
-    result: list[dict] = []
-
-    for app in open_apps:
-        if len(result) >= limit:
-            break
-        try:
-            detail = _scrape_app_detail(app["departures_id"])
-            if detail and detail.get("app_id"):
-                result.append(
-                    {
-                        **app,
-                        **detail,
-                        "status": "OPEN",
-                    }
-                )
-            time.sleep(0.5)
-        except Exception as exc:
-            logger.warning("Failed detail for departures_id %s: %s", app["departures_id"], exc)
-
-    return result
+    """Alias của get_open_apps_cached dùng cho scheduler sync."""
+    return get_open_apps_cached()[:limit]
